@@ -165,6 +165,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--seed", type=int, default=2024)
+    parser.add_argument("--hidden_dim", type=int, default=64)
 
     # Any additional model hyper‑parameters should be added here and will be captured
     # by **model_kwargs in the train() function.

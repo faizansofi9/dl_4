@@ -32,7 +32,7 @@ class MLPPlanner(nn.Module):
         self,
         n_track: int = 10,
         n_waypoints: int = 3,
-        hidden_dim: int = 32,
+        hidden_dim: int = 256,
     ):
         """
         Args:
@@ -42,7 +42,7 @@ class MLPPlanner(nn.Module):
         super().__init__()
 
         num_layers = 3
-        self.hidden_dim = 32
+        self.hidden_dim = hidden_dim
         self.n_track = n_track
         self.n_waypoints = n_waypoints
         # 2 coords * 2 (left + right)
