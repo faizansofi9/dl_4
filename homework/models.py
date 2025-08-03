@@ -9,10 +9,29 @@ INPUT_STD = [0.2064, 0.1944, 0.2252]
 
 
 class MLPPlanner(nn.Module):
+
+  class ResidualBlock(nn.Module):
+    def __init__(self, dim: int, widening: int = 2, p_dropout: float = 0.1):
+        super().__init__()
+        self.fc1 = nn.Linear(dim, dim * widening)
+        self.fc2 = nn.Linear(dim * widening, dim)
+        self.norm = nn.LayerNorm(dim)
+        self.dropout = nn.Dropout(p_dropout)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        y = self.fc1(x)
+        y = F.gelu(y)
+        y = self.dropout(y)
+        y = self.fc2(y)
+        y = self.dropout(y)
+        return self.norm(x + y)
+
+
     def __init__(
         self,
         n_track: int = 10,
         n_waypoints: int = 3,
+        hidden_dim: int = 32,
     ):
         """
         Args:
@@ -21,8 +40,34 @@ class MLPPlanner(nn.Module):
         """
         super().__init__()
 
+        num_layers = 3
+        self.hidden_dim = 32
         self.n_track = n_track
         self.n_waypoints = n_waypoints
+        # 2 coords * 2 (left + right)
+        in_dim = n_track * 2 * 2
+
+        layers = []
+
+        self.proj = nn.Sequential(
+          nn.LayerNorm(in_dim),
+          nn.Linear(in_dim, hidden_dim),
+          nn.GELU()
+        )
+
+        layers.append(self.proj)
+
+        for i in range(num_layers):
+          layers.append(self.ResidualBlock(self.hidden_dim, self.hidden_dim))
+          c = self.hidden_dim
+
+        self.head = nn.Sequential(
+            nn.LayerNorm(hidden_dim),
+            nn.Linear(c, n_waypoints * 2)
+        )
+        layers.append(self.head)
+
+        self.model = torch.nn.Sequential(*layers)
 
     def forward(
         self,
@@ -43,7 +88,9 @@ class MLPPlanner(nn.Module):
         Returns:
             torch.Tensor: future waypoints with shape (b, n_waypoints, 2)
         """
-        raise NotImplementedError
+        x = torch.cat((track_left, track_right), dim=2).view(track_left.size(0), -1)
+        x = x.view(track_left.size(0), self.n_waypoints, 2)
+        return self.model(x)
 
 
 class TransformerPlanner(nn.Module):
