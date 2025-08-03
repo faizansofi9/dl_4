@@ -2,6 +2,7 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 HOMEWORK_DIR = Path(__file__).resolve().parent
 INPUT_MEAN = [0.2788, 0.2657, 0.2629]
@@ -10,15 +11,15 @@ INPUT_STD = [0.2064, 0.1944, 0.2252]
 
 class MLPPlanner(nn.Module):
 
-  class ResidualBlock(nn.Module):
-    def __init__(self, dim: int, widening: int = 2, p_dropout: float = 0.1):
+    class ResidualBlock(nn.Module):
+      def __init__(self, dim: int, widening: int = 2, p_dropout: float = 0.1):
         super().__init__()
         self.fc1 = nn.Linear(dim, dim * widening)
         self.fc2 = nn.Linear(dim * widening, dim)
         self.norm = nn.LayerNorm(dim)
         self.dropout = nn.Dropout(p_dropout)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+      def forward(self, x: torch.Tensor) -> torch.Tensor:
         y = self.fc1(x)
         y = F.gelu(y)
         y = self.dropout(y)
@@ -58,14 +59,18 @@ class MLPPlanner(nn.Module):
         layers.append(self.proj)
 
         for i in range(num_layers):
-          layers.append(self.ResidualBlock(self.hidden_dim, self.hidden_dim))
-          c = self.hidden_dim
+          layers.append(self.ResidualBlock(self.hidden_dim))
 
         self.head = nn.Sequential(
             nn.LayerNorm(hidden_dim),
-            nn.Linear(c, n_waypoints * 2)
+            nn.Linear(hidden_dim, n_waypoints * 2)
         )
         layers.append(self.head)
+
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                nn.init.zeros_(m.bias)
 
         self.model = torch.nn.Sequential(*layers)
 
@@ -89,8 +94,9 @@ class MLPPlanner(nn.Module):
             torch.Tensor: future waypoints with shape (b, n_waypoints, 2)
         """
         x = torch.cat((track_left, track_right), dim=2).view(track_left.size(0), -1)
-        x = x.view(track_left.size(0), self.n_waypoints, 2)
-        return self.model(x)
+        output = self.model(x)
+        y = output.view(track_left.size(0), self.n_waypoints, 2)
+        return y
 
 
 class TransformerPlanner(nn.Module):
@@ -216,3 +222,18 @@ def calculate_model_size_mb(model: torch.nn.Module) -> float:
     Naive way to estimate model size
     """
     return sum(p.numel() for p in model.parameters()) * 4 / 1024 / 1024
+
+
+if __name__ == "__main__":
+  model = MLPPlanner()
+  dummy_l = torch.randn(4, 10, 2)
+  dummy_r = torch.randn(4, 10, 2)
+  out = model(dummy_l, dummy_r)
+  assert out.shape == (4, 3, 2)
+  print("OK →", out.mean().item())
+
+
+
+
+
+
