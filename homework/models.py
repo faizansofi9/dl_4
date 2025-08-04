@@ -160,6 +160,28 @@ class TransformerPlanner(nn.Module):
 
 
 class CNNPlanner(torch.nn.Module):
+
+    class Block(torch.nn.Module):
+        def __init__(self, in_ch, out_ch, stride):
+            super().__init__()
+            kernel_size = 3
+            p = (kernel_size - 1) // 2
+
+            self.net = torch.nn.Sequential(
+                torch.nn.Conv2d(in_ch, out_ch, kernel_size, stride, p, bias=False),
+                torch.nn.BatchNorm2d(out_ch),
+                torch.nn.ReLU(inplace=True),
+                torch.nn.Conv2d(out_ch, out_ch, kernel_size, 1, p, bias=False),
+                torch.nn.BatchNorm2d(out_ch),
+                torch.nn.ReLU(inplace=True),
+                torch.nn.Conv2d(out_ch, out_ch, kernel_size, 1, p, bias=False),
+                torch.nn.BatchNorm2d(out_ch),
+                torch.nn.ReLU(inplace=True),
+            )
+
+        def forward(self, x):
+            return self.net(x)
+
     def __init__(
         self,
         n_waypoints: int = 3,
@@ -167,6 +189,21 @@ class CNNPlanner(torch.nn.Module):
         super().__init__()
 
         self.n_waypoints = n_waypoints
+        channels_l0 = 64
+        n_blocks = 3
+        cnn_layers = [
+            torch.nn.Conv2d(n_waypoints, channels_l0, kernel_size=11, stride=2, padding=5),
+            torch.nn.BatchNorm2d(channels_l0),
+            torch.nn.ReLU(),
+        ]
+        c1 = channels_l0
+        for _ in range(n_blocks):
+            c2 = c1 * 2
+            cnn_layers.append(self.Block(c1, c2, stride=2))
+            c1 = c2
+        cnn_layers.append(torch.nn.AdaptiveAvgPool2d(1))
+        cnn_layers.append(torch.nn.Conv2d(c1, n_waypoints * 2, kernel_size=1, stride=1))
+        self.network = torch.nn.Sequential(*cnn_layers)
 
         self.register_buffer("input_mean", torch.as_tensor(INPUT_MEAN), persistent=False)
         self.register_buffer("input_std", torch.as_tensor(INPUT_STD), persistent=False)
@@ -181,8 +218,9 @@ class CNNPlanner(torch.nn.Module):
         """
         x = image
         x = (x - self.input_mean[None, :, None, None]) / self.input_std[None, :, None, None]
-
-        raise NotImplementedError
+        logits = self.network(x)
+        logits = logits.view(logits.size(0), self.n_waypoints, -1)
+        return logits
 
 
 MODEL_FACTORY = {

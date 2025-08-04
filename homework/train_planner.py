@@ -13,6 +13,7 @@
 import argparse
 from datetime import datetime
 from pathlib import Path
+import inspect
 
 import numpy as np
 import torch
@@ -41,6 +42,13 @@ def get_device() -> torch.device:
         return torch.device("mps")
     print("CUDA/MPS not available → using CPU")
     return torch.device("cpu")
+
+
+def _model_accepts_image(model) -> bool:
+    """Heuristic: returns True when *model* expects an `image` tensor as first arg."""
+    sig = inspect.signature(model.forward)
+    params = list(sig.parameters.values())
+    return params and params[0].name in {"img", "image", "x"} and params[0].annotation is torch.Tensor
 
 
 # ----------------------------------------------------------------------------------
@@ -72,6 +80,7 @@ def train(
     # Model --------------------------------------------------------------------------
     model = load_model(model_name, **model_kwargs).to(device)
     print(model)
+    uses_image = _model_accepts_image(model) or "cnn" in model_name.lower()
 
     # Data ---------------------------------------------------------------------------
     train_loader = load_drive_data(
@@ -98,12 +107,16 @@ def train(
         train_metric.reset()
 
         for batch in train_loader:
-            track_left = batch["track_left"].to(device)
-            track_right = batch["track_right"].to(device)
             waypoints = batch["waypoints"].to(device)
             mask = batch["waypoints_mask"].to(device)
 
-            preds = model(track_left, track_right)
+            if uses_image:
+                img = batch["image"].to(device)
+                preds = model(img)
+            else:
+                track_left = batch["track_left"].to(device)
+                track_right = batch["track_right"].to(device)
+                preds = model(track_left, track_right)
 
             loss = masked_smooth_l1(preds, waypoints, mask)
             optimizer.zero_grad()
@@ -121,12 +134,17 @@ def train(
         val_metric.reset()
         with torch.inference_mode():
             for batch in val_loader:
-                track_left = batch["track_left"].to(device)
-                track_right = batch["track_right"].to(device)
                 waypoints = batch["waypoints"].to(device)
                 mask = batch["waypoints_mask"].to(device)
 
-                preds = model(track_left, track_right)
+                if uses_image:
+                    img = batch["image"].to(device)
+                    preds = model(img)
+                else:
+                    track_left = batch["track_left"].to(device)
+                    track_right = batch["track_right"].to(device)
+                    preds = model(track_left, track_right)
+
                 val_metric.add(preds, waypoints, mask)
 
         # ---- Logging ---------------------------------------------------------------
@@ -166,7 +184,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--seed", type=int, default=2024)
     # parser.add_argument("--hidden_dim", type=int, default=64)
-    parser.add_argument("--d_model", type=int, default=128)
+    # parser.add_argument("--d_model", type=int, default=128)
 
     # Any additional model hyper‑parameters should be added here and will be captured
     # by **model_kwargs in the train() function.
