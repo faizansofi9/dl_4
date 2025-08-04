@@ -104,14 +104,28 @@ class TransformerPlanner(nn.Module):
         self,
         n_track: int = 10,
         n_waypoints: int = 3,
-        d_model: int = 64,
+        d_model: int = 256,
     ):
         super().__init__()
-
+        num_heads = d_model // 32
+        num_layers = 4
         self.n_track = n_track
         self.n_waypoints = n_waypoints
-
+        self.boundary_proj = nn.Linear(2, d_model)
         self.query_embed = nn.Embedding(n_waypoints, d_model)
+
+        decoder_layer = nn.TransformerDecoderLayer(
+          d_model=d_model,
+          nhead=num_heads,
+          dim_feedforward=d_model*4,
+          activation="gelu",
+          batch_first=True,
+        )
+        self.decoder = nn.TransformerDecoder(
+          decoder_layer=decoder_layer,
+          num_layers=num_layers,
+        )
+        self.out = nn.Linear(d_model, 2)
 
     def forward(
         self,
@@ -132,7 +146,17 @@ class TransformerPlanner(nn.Module):
         Returns:
             torch.Tensor: future waypoints with shape (b, n_waypoints, 2)
         """
-        raise NotImplementedError
+        B = track_left.shape[0]
+        left = self.boundary_proj(track_left) # (b, num_track, d_model)
+        right = self.boundary_proj(track_right) # (b, num_track, d_model)
+        kv = torch.cat([left, right], dim=1) # (b, 2*num_track, d_model)
+        q = self.query_embed.weight.unsqueeze(0).expand(B, -1, -1)
+        tranform_output = self.decoder(
+          tgt=q,
+          memory=kv,
+        ) # (b, n_waypoints, d_model)
+        out = self.out(tranform_output) # (b, n_waypoints, 2)
+        return out
 
 
 class CNNPlanner(torch.nn.Module):
