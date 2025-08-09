@@ -32,7 +32,7 @@ class MLPPlanner(nn.Module):
         self,
         n_track: int = 10,
         n_waypoints: int = 3,
-        hidden_dim: int = 256,
+        hidden_dim: int = 96,
     ):
         """
         Args:
@@ -104,7 +104,7 @@ class TransformerPlanner(nn.Module):
         self,
         n_track: int = 10,
         n_waypoints: int = 3,
-        d_model: int = 128,
+        d_model: int = 96,
     ):
         super().__init__()
         num_heads = d_model // 32
@@ -190,7 +190,7 @@ class CNNPlanner(torch.nn.Module):
         super().__init__()
 
         self.n_waypoints = n_waypoints
-        channels_l0 = 64
+        channels_l0 = 32
         n_blocks = 3
         cnn_layers = [
             torch.nn.Conv2d(n_waypoints, channels_l0, kernel_size=11, stride=2, padding=5),
