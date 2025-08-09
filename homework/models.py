@@ -104,7 +104,7 @@ class TransformerPlanner(nn.Module):
         self,
         n_track: int = 10,
         n_waypoints: int = 3,
-        d_model: int = 256,
+        d_model: int = 128,
     ):
         super().__init__()
         num_heads = d_model // 32
@@ -119,6 +119,7 @@ class TransformerPlanner(nn.Module):
           nhead=num_heads,
           dim_feedforward=d_model*4,
           activation="gelu",
+          dropout=0.1,
           batch_first=True,
         )
         self.decoder = nn.TransformerDecoder(
